@@ -21,6 +21,9 @@ logs/
 /exports/
 *codes*.csv
 
+# Private transfer bundles may contain .env and must never be committed
+/private-builds/
+
 # Editor and OS files
 .DS_Store
 .idea/
