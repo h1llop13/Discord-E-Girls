@@ -8,6 +8,11 @@ export interface VoiceRoomPrincipals {
   botId: string;
 }
 
+export function privateVoiceRoomName(displayName: string): string {
+  const cleanName = displayName.replaceAll(/[\r\n]/g, " ").trim() || "клиент";
+  return `🔒・${cleanName}`.slice(0, 100);
+}
+
 export function privateVoiceOverwrites(principals: VoiceRoomPrincipals): OverwriteResolvable[] {
   const participantAllows = [
     PermissionFlagsBits.ViewChannel,

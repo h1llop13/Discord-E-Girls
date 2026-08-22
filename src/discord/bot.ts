@@ -16,16 +16,11 @@ import { ActivationGuardRepository } from "../db/activation-guard-repository.js"
 import { OrderRepository, type OrderRecord } from "../db/order-repository.js";
 import { ActivationService } from "../services/activation-service.js";
 import { commandDefinitions } from "./commands.js";
-import { privateVoiceOverwrites } from "./permissions.js";
+import { privateVoiceOverwrites, privateVoiceRoomName } from "./permissions.js";
 
 interface BotDependencies {
   config: AppConfig;
   pool: Pool;
-}
-
-function roomName(displayName: string): string {
-  const cleanName = displayName.replaceAll(/[\r\n]/g, " ").trim() || "клиент";
-  return `🔒・${cleanName}`.slice(0, 100);
 }
 
 async function sendPrivateOrTemporary(message: Message, text: string): Promise<void> {
@@ -91,7 +86,7 @@ export class DiscordBot {
     try {
       const guild = await client.guilds.fetch(this.dependencies.config.DISCORD_GUILD_ID);
       await this.validateConfiguredGuild(guild);
-      await this.repairMissingVoiceRooms(guild);
+      await this.repairActiveOrders(guild);
       console.log(`Discord bot ${client.user.tag} connected to ${guild.name} (${guild.id}).`);
     } catch (error) {
       console.error("Discord startup validation failed:", error);
@@ -185,7 +180,7 @@ export class DiscordBot {
     const botId = guild.members.me?.id;
     if (!botId) throw new Error("Bot guild member is unavailable.");
     const created = await guild.channels.create({
-      name: roomName(buyer.displayName),
+      name: privateVoiceRoomName(buyer.displayName),
       type: ChannelType.GuildVoice,
       parent: config.PRIVATE_CATEGORY_ID,
       reason: `Private room for order #${order.id}`,
@@ -198,17 +193,21 @@ export class DiscordBot {
       }),
     });
 
-    const storedChannelId = await this.orders.setVoiceChannelIfMissing(order.id, created.id);
+    const storedChannelId = await this.orders.replaceVoiceChannel(order.id, order.voiceChannelId, created.id);
     if (storedChannelId !== created.id) {
       await created.delete("Duplicate room prevented").catch(() => undefined);
     }
     return storedChannelId;
   }
 
-  private async repairMissingVoiceRooms(guild: Guild): Promise<void> {
-    const orders = await this.orders.findActiveWithoutVoiceChannel(guild.id);
+  private async repairActiveOrders(guild: Guild): Promise<void> {
+    const orders = await this.orders.findActive(guild.id);
     for (const order of orders) {
       try {
+        const buyer = await guild.members.fetch(order.buyerDiscordId);
+        if (!buyer.roles.cache.has(this.dependencies.config.CLIENT_ROLE_ID)) {
+          await buyer.roles.add(this.dependencies.config.CLIENT_ROLE_ID, `Restore active order #${order.id}`);
+        }
         await this.ensureVoiceRoom(guild, order);
       } catch (error) {
         console.error(`Could not restore voice room for order #${order.id}:`, error);

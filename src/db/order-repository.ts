@@ -88,12 +88,12 @@ export class OrderRepository {
     }
   }
 
-  public async setVoiceChannelIfMissing(orderId: number, channelId: string): Promise<string> {
+  public async replaceVoiceChannel(orderId: number, expectedChannelId: string | null, channelId: string): Promise<string> {
     const updated = await this.pool.query<{ voice_channel_id: string }>(
       `UPDATE orders SET voice_channel_id = $2
-       WHERE id = $1 AND voice_channel_id IS NULL AND status = 'active'
+       WHERE id = $1 AND voice_channel_id IS NOT DISTINCT FROM $3 AND status = 'active'
        RETURNING voice_channel_id`,
-      [orderId, channelId],
+      [orderId, channelId, expectedChannelId],
     );
     if (updated.rows[0]) return updated.rows[0].voice_channel_id;
 
@@ -106,10 +106,10 @@ export class OrderRepository {
     return existingChannel;
   }
 
-  public async findActiveWithoutVoiceChannel(guildId: string): Promise<OrderRecord[]> {
+  public async findActive(guildId: string): Promise<OrderRecord[]> {
     const result = await this.pool.query<OrderRow>(
       `SELECT ${orderColumns} FROM orders
-       WHERE guild_id = $1 AND status = 'active' AND voice_channel_id IS NULL
+       WHERE guild_id = $1 AND status = 'active'
        ORDER BY id`,
       [guildId],
     );

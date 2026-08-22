@@ -1,6 +1,6 @@
 import { PermissionFlagsBits } from "discord.js";
 import { describe, expect, it } from "vitest";
-import { privateVoiceOverwrites } from "../src/discord/permissions.js";
+import { privateVoiceOverwrites, privateVoiceRoomName } from "../src/discord/permissions.js";
 
 describe("private voice permissions", () => {
   const overwrites = privateVoiceOverwrites({
@@ -28,5 +28,16 @@ describe("private voice permissions", () => {
   it("lets the bot manage the room", () => {
     const overwrite = overwrites.find((value) => "id" in value && value.id === "bot");
     expect(overwrite && "allow" in overwrite ? overwrite.allow : []).toContain(PermissionFlagsBits.ManageChannels);
+  });
+});
+
+describe("private voice room name", () => {
+  it("uses the required prefix and removes line breaks", () => {
+    expect(privateVoiceRoomName("  Alice\nAdmin  ")).toBe("🔒・Alice Admin");
+  });
+
+  it("falls back for an empty display name and respects Discord's limit", () => {
+    expect(privateVoiceRoomName("  ")).toBe("🔒・клиент");
+    expect(privateVoiceRoomName("x".repeat(200))).toHaveLength(100);
   });
 });
