@@ -12,6 +12,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "codes:generate": "tsx src/codes/generate-cli.ts",
     "test": "vitest run",
+    "test:db": "vitest run tests/db.integration.test.ts",
     "test:watch": "vitest"
   },
   "engines": {

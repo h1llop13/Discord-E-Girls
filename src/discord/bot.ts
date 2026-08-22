@@ -94,7 +94,7 @@ export class DiscordBot {
   private bindEvents(): void {
     this.client.once(Events.ClientReady, (client) => void this.onReady(client));
     this.client.on(Events.InteractionCreate, (interaction) => {
-      void this.onInteraction(interaction).catch((error: unknown) => console.error("Interaction failed:", error));
+      void this.onInteraction(interaction).catch((error: unknown) => this.reportInteractionError(interaction, error));
     });
     this.client.on(Events.MessageCreate, (message) => {
       void this.onMessage(message).catch((error: unknown) => console.error("Message handling failed:", error));
@@ -131,8 +131,8 @@ export class DiscordBot {
       guild.channels.fetch(config.ORDER_LOG_CHANNEL_ID),
       guild.channels.fetch(config.PRIVATE_CATEGORY_ID),
     ]);
-    if (!commandChannel?.isTextBased()) throw new Error("COMMAND_CHANNEL_ID is not a text channel.");
-    if (!logChannel?.isTextBased()) throw new Error("ORDER_LOG_CHANNEL_ID is not a text channel.");
+    if (commandChannel?.type !== ChannelType.GuildText) throw new Error("COMMAND_CHANNEL_ID is not a server text channel.");
+    if (logChannel?.type !== ChannelType.GuildText) throw new Error("ORDER_LOG_CHANNEL_ID is not a server text channel.");
     if (privateCategory?.type !== ChannelType.GuildCategory) {
       throw new Error("PRIVATE_CATEGORY_ID is not a Discord category.");
     }
@@ -158,6 +158,7 @@ export class DiscordBot {
     }
 
     if (interaction.commandName === "bot-status") {
+      await this.dependencies.pool.query("SELECT 1");
       await interaction.reply({ content: "✅ Бот подключён, база доступна, конфигурация сервера загружена.", ephemeral: true });
       return;
     }
@@ -191,6 +192,18 @@ export class DiscordBot {
         const closed = await this.timerManager.closeOrder(guild, orderId);
         await interaction.editReply(closed ? `Заказ #${orderId} закрыт.` : `Активный заказ #${orderId} не найден.`);
       }
+    }
+  }
+
+  private async reportInteractionError(interaction: Interaction, error: unknown): Promise<void> {
+    console.error("Interaction failed:", error);
+    if (!interaction.isRepliable()) return;
+    const content = "Не удалось выполнить команду. Проверьте журнал бота или повторите позже.";
+    try {
+      if (interaction.deferred || interaction.replied) await interaction.editReply({ content, files: [] });
+      else await interaction.reply({ content, ephemeral: true });
+    } catch (replyError) {
+      console.error("Could not report interaction error:", replyError);
     }
   }
 
@@ -233,7 +246,7 @@ export class DiscordBot {
   private async ensureVoiceRoom(guild: Guild, order: OrderRecord): Promise<string> {
     if (order.voiceChannelId) {
       const existing = await guild.channels.fetch(order.voiceChannelId).catch(() => null);
-      if (existing) {
+      if (existing?.type === ChannelType.GuildVoice) {
         await this.timerManager.ensureWaiting(order.id);
         return existing.id;
       }

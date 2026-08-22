@@ -13,6 +13,7 @@ import { timerPolicy, type TimerPolicy } from "../timers/policy.js";
 export class DiscordTimerManager {
   private readonly policy: TimerPolicy;
   private interval: NodeJS.Timeout | null = null;
+  private processing = false;
 
   public constructor(
     private readonly client: Client,
@@ -58,27 +59,33 @@ export class DiscordTimerManager {
   }
 
   public async processDue(guild: Guild): Promise<void> {
-    const now = new Date();
-    const activeTimers = await this.timers.findActive(guild.id);
-    for (const timer of activeTimers) {
-      const action = dueAction(timer, now);
-      if (action === "expire_waiting") {
-        await this.orders.finalize(timer.orderId, "not_started");
-        await this.log(guild, `⌛ Заказ #${timer.orderId} не начался вовремя и закрыт.`);
-      } else if (action === "warn") {
-        await this.warnParticipants(timer);
-        await this.timers.markWarningSent(timer.orderId, now);
-        await this.log(guild, `⚠️ Для заказа #${timer.orderId} отправлено предупреждение.`);
-      } else if (action === "lock") {
-        await this.lockEntry(guild, timer);
-        await this.timers.markEntryLocked(timer.orderId, now);
-        await this.log(guild, `🔒 Вход в комнату заказа #${timer.orderId} закрыт.`);
-      } else if (action === "complete") {
-        await this.orders.finalize(timer.orderId, "completed");
-        await this.log(guild, `✅ Время заказа #${timer.orderId} завершено.`);
+    if (this.processing) return;
+    this.processing = true;
+    try {
+      const now = new Date();
+      const activeTimers = await this.timers.findActive(guild.id);
+      for (const timer of activeTimers) {
+        const action = dueAction(timer, now);
+        if (action === "expire_waiting") {
+          await this.orders.finalize(timer.orderId, "not_started");
+          await this.log(guild, `⌛ Заказ #${timer.orderId} не начался вовремя и закрыт.`);
+        } else if (action === "warn") {
+          await this.warnParticipants(timer);
+          await this.timers.markWarningSent(timer.orderId, now);
+          await this.log(guild, `⚠️ Для заказа #${timer.orderId} отправлено предупреждение.`);
+        } else if (action === "lock") {
+          await this.lockEntry(guild, timer);
+          await this.timers.markEntryLocked(timer.orderId, now);
+          await this.log(guild, `🔒 Вход в комнату заказа #${timer.orderId} закрыт.`);
+        } else if (action === "complete") {
+          await this.orders.finalize(timer.orderId, "completed");
+          await this.log(guild, `✅ Время заказа #${timer.orderId} завершено.`);
+        }
       }
+      await this.cleanupFinalized(guild);
+    } finally {
+      this.processing = false;
     }
-    await this.cleanupFinalized(guild);
   }
 
   public async extendOrder(guild: Guild, orderId: number, minutes: number): Promise<OrderTimerRecord | null> {

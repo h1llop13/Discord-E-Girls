@@ -1,105 +1,200 @@
 # Discord E-Girls Bot
 
-TypeScript Discord bot for activating purchase codes and managing private voice orders.
+Discord-бот на TypeScript для активации одноразовых кодов, создания приватных голосовых комнат и автоматического завершения заказов.
 
-## Requirements
+## Что умеет бот
 
-- macOS
-- Node.js 22 or newer
-- PostgreSQL 16 or newer (needed from stage 2 onward)
+- принимает код только в настроенном канале и сразу удаляет сообщение;
+- атомарно активирует код в PostgreSQL, поэтому один код нельзя применить дважды;
+- выдаёт роль `🛒 Клиент` и создаёт только голосовую комнату `🔒・ник`;
+- открывает комнату покупателю, `💕 E-Girl`, `👑 Куратор` и боту, закрывая её от остальных и запрещая приглашения;
+- запускает сохраняемый таймер, предупреждает участников, закрывает вход и удаляет комнату;
+- восстанавливает активные заказы и таймеры после перезапуска;
+- блокирует пользователя на час после пяти неверных кодов за десять минут;
+- предоставляет куратору команды для кодов и заказов.
 
-## Initial setup on Mac
+Бот обслуживает только один сервер — `DISCORD_GUILD_ID`.
 
-1. Install Node.js with Homebrew if it is not already installed:
+## Требования
 
-   ```bash
-   brew install node
-   ```
+- macOS;
+- Node.js 22 или новее;
+- PostgreSQL 16 или новее;
+- Discord-сервер, на котором вы можете управлять ботами, ролями и каналами.
 
-2. Install dependencies:
+## 1. Установка
 
-   ```bash
-   npm install
-   ```
-
-3. Create local configuration and replace every placeholder with a local value:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Never commit `.env` or send the Discord token to anyone.
-
-## Commands
+Установите Node.js и PostgreSQL через Homebrew:
 
 ```bash
-npm run dev       # run in development mode
-npm run build     # compile TypeScript into dist/
-npm run check     # type-check without writing files
-npm run test      # run automated tests once
-npm start         # run the compiled app
-```
-
-Startup stops with a list of missing or invalid environment variables when configuration is incomplete.
-
-## PostgreSQL and the first codes
-
-Install and start PostgreSQL, then create a local role and an empty database:
-
-```bash
-brew install postgresql@16
+brew install node postgresql@16
 brew services start postgresql@16
-createuser --pwprompt discord_bot
-createdb --owner=discord_bot discord_bot
+npm install
 ```
 
-Set the matching password in the local `.env` only:
+Создайте локальный файл настроек:
+
+```bash
+cp .env.example .env
+```
+
+`.env` содержит секреты и уже исключён из Git. Не отправляйте его другим людям.
+
+## 2. PostgreSQL
+
+Создайте пользователя и пустую базу. Первая команда безопасно запросит пароль, не показывая его в истории терминала:
+
+```bash
+PG_BIN="$(brew --prefix postgresql@16)/bin"
+"$PG_BIN/createuser" --pwprompt discord_bot
+"$PG_BIN/createdb" --owner=discord_bot discord_bot
+```
+
+Укажите тот же пароль только в локальном `.env`:
 
 ```dotenv
-DATABASE_URL=postgresql://discord_bot:YOUR_PASSWORD@localhost:5432/discord_bot
+DATABASE_URL=postgresql://discord_bot:ВАШ_ПАРОЛЬ@localhost:5432/discord_bot
 ```
 
-Create/update the schema and generate the first private CSV containing 100 codes:
+Если пароль содержит `@`, `:`, `/`, `?`, `#` или `%`, закодируйте эти символы как URL-компонент.
+
+Примените миграции:
 
 ```bash
 npm run db:migrate
+```
+
+Команда повторяемая: уже выполненные миграции второй раз не применяются.
+
+## 3. Настройка Discord
+
+1. Откройте [Discord Developer Portal](https://discord.com/developers/applications) и создайте приложение.
+2. На странице **Bot** создайте бота, получите токен и вставьте его только в `DISCORD_TOKEN` локального `.env`.
+3. На той же странице включите **Server Members Intent** и **Message Content Intent**.
+4. В **OAuth2 → URL Generator** выберите scopes `bot` и `applications.commands`.
+5. Выдайте боту права: View Channels, Send Messages, Manage Messages, Manage Roles, Manage Channels, Connect, Speak и Move Members.
+6. Откройте полученную ссылку и пригласите бота на нужный сервер.
+7. Поставьте роль бота выше роли `🛒 Клиент`, иначе Discord не разрешит выдавать и снимать её.
+8. В Discord включите **User Settings → Advanced → Developer Mode**. Правой кнопкой копируйте ID сервера, каналов, категории и ролей в `.env`.
+
+Создайте на сервере:
+
+- текстовый канал приёма кодов, например `#приём-команд`;
+- текстовый канал `#логи-заказов`;
+- категорию `🔒 Приват`;
+- роли `👑 Куратор`, `🛒 Клиент` и `💕 E-Girl`.
+
+## 4. Переменные `.env`
+
+| Переменная | Что указать |
+| --- | --- |
+| `DISCORD_TOKEN` | секретный токен со страницы Bot |
+| `DISCORD_APPLICATION_ID` | Application ID из General Information |
+| `DISCORD_GUILD_ID` | ID единственного обслуживаемого сервера |
+| `COMMAND_CHANNEL_ID` | ID текстового канала приёма кодов |
+| `ORDER_LOG_CHANNEL_ID` | ID текстового канала журнала |
+| `PRIVATE_CATEGORY_ID` | ID категории приватных комнат |
+| `CURATOR_ROLE_ID` | ID роли `👑 Куратор` |
+| `CLIENT_ROLE_ID` | ID роли `🛒 Клиент` |
+| `EGIRL_ROLE_ID` | ID роли `💕 E-Girl` |
+| `DATABASE_URL` | строка подключения PostgreSQL |
+| `TEST_MODE` | `true` только для короткой ручной проверки |
+
+При отсутствии или ошибке обязательной настройки запуск остановится и перечислит проблемные поля.
+
+## 5. Первые 100 кодов
+
+После миграции выполните:
+
+```bash
 npm run codes:generate -- --count 100
 ```
 
-The CSV is written with owner-only permissions below `codes/`. That directory is intentionally ignored by Git.
+Коды сохранятся в PostgreSQL и в новом CSV внутри `codes/`. Файл получает права только для владельца, а каталог исключён из Git. Не публикуйте свежие коды.
 
-## Discord application setup
+## 6. Запуск и проверки кода
 
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications), create an application, and open its **Bot** page.
-2. Create/reset the bot token and paste it only into `DISCORD_TOKEN` in your local `.env`.
-3. On the Bot page enable **Server Members Intent** and **Message Content Intent**.
-4. In **OAuth2 → URL Generator**, select the `bot` and `applications.commands` scopes. Grant the bot these server permissions: View Channels, Send Messages, Manage Messages, Manage Roles, Manage Channels, Connect, Speak, and Move Members.
-5. Open the generated URL and invite the bot to the intended server. Place its bot role above `🛒 Клиент` so it can grant and remove that role.
-6. Enable Developer Mode in Discord (**User Settings → Advanced**). Right-click the server, channels, category, and roles to copy their IDs into `.env`.
-
-The bot registers `/bot-status` only in `DISCORD_GUILD_ID`. It ignores messages and interactions from every other server. The command is accepted only from a member with `CURATOR_ROLE_ID` (`👑 Куратор`).
-
-Run the bot after the database migration:
+Во время разработки:
 
 ```bash
+npm run dev
+```
+
+Перед обычным запуском:
+
+```bash
+npm run check
 npm run build
+npm run test
 npm start
 ```
 
-Successful startup prints the bot account and configured server to the console. Never paste the token into chat, source code, logs, or Git.
+После успешного подключения консоль покажет аккаунт бота и выбранный сервер. Slash-команды регистрируются для этого сервера при каждом запуске.
 
-## Timer modes
+Доступные npm-команды:
 
-`TEST_MODE=false` uses the production schedule: 60 minutes waiting for a conversation to start, a 60-minute active order, a warning 10 minutes before closing, and room deletion 5 minutes after entry is locked.
+```text
+npm run check            строгая проверка TypeScript
+npm run build            сборка в dist/
+npm run test             автономные тесты
+npm run test:db          интеграционный тест PostgreSQL
+npm run db:migrate       применение миграций
+npm run codes:generate   генерация приватного CSV
+```
 
-For manual testing set `TEST_MODE=true`: waiting and active order time are 2 minutes, the warning is sent 1 minute before closing, and deletion happens 1 minute after closing. Timers and joined E-Girl participants are stored in PostgreSQL and continue after a bot restart.
+Интеграционный тест никогда не использует `DATABASE_URL`. Создайте отдельную тестовую базу и передайте её явно:
 
-## Curator commands
+```bash
+TEST_DATABASE_URL=postgresql://discord_bot:ПАРОЛЬ@localhost:5432/discord_bot_test npm run test:db
+```
 
-All commands below require the configured `👑 Куратор` role. Replies containing codes are ephemeral and are never posted in a public channel.
+Тест проверяет в настоящем PostgreSQL, что две одновременные активации создают только один заказ.
 
-- `/bot-status` — verify the bot is online.
-- `/codes generate quantity:3` — create codes and receive a private CSV attachment.
-- `/codes unused` — receive a private CSV containing every unused code.
-- `/order extend number:12 minutes:10` — extend an already-started order immediately.
-- `/order close number:12` — close and delete a room early, remove the client role when no other active order remains, and write to the order log.
+## Таймеры
+
+При `TEST_MODE=false` действуют боевые интервалы:
+
+- 60 минут на ожидание начала разговора;
+- 60 минут с момента одновременного присутствия покупателя и хотя бы одной `💕 E-Girl`;
+- предупреждение за 10 минут;
+- закрытие входа по окончании 60 минут;
+- удаление комнаты ещё через 5 минут.
+
+При `TEST_MODE=true`: ожидание и заказ — по 2 минуты, предупреждение — за 1 минуту, удаление — через 1 минуту после закрытия. Выход участника не останавливает уже запущенный таймер. Состояние и список заходивших девушек хранятся в PostgreSQL.
+
+## Команды куратора
+
+Все ответы с кодами скрыты от других участников.
+
+- `/bot-status` — проверить Discord и PostgreSQL;
+- `/codes generate quantity:3` — создать коды и получить приватный CSV;
+- `/codes unused` — получить приватный CSV со свободными кодами;
+- `/order extend number:12 minutes:10` — сразу продлить запущенный заказ;
+- `/order close number:12` — досрочно закрыть заказ, удалить комнату и записать событие в журнал.
+
+## Ручная проверка полного сценария
+
+Для проверки нужны куратор, покупатель и отдельный участник с ролью `💕 E-Girl`. Включите `TEST_MODE=true`.
+
+1. Запустите миграции, создайте тестовый код и запустите бота.
+2. Проверьте `/bot-status` от куратора и отказ обычному пользователю.
+3. Отправьте код обычным сообщением в канале приёма. Сообщение должно исчезнуть, покупатель — получить роль и ЛС, а журнал — запись без самого кода.
+4. Повторите тот же код: активация должна быть отклонена. В другом канале бот не должен реагировать.
+5. Проверьте комнату: покупатель, E-Girl и куратор видят её; обычный участник не видит; текстового канала нет; приглашение создать нельзя.
+6. Зайдите покупателем и E-Girl одновременно. В журнале должна появиться запись о запуске таймера.
+7. Перезапустите бота во время таймера. Отсчёт не должен начаться заново.
+8. Дождитесь ЛС, закрытия входа и удаления комнаты. Роль покупателя должна сняться.
+9. Создайте ещё один заказ и проверьте `/order extend`, затем `/order close`.
+10. Отправьте пять неверных кодов за десять минут и проверьте часовую блокировку.
+
+## Перед боевым запуском
+
+- верните `TEST_MODE=false`;
+- создайте отдельную боевую базу и сделайте резервное копирование;
+- выполните `npm run check`, `npm run build`, `npm run test` и `npm run db:migrate`;
+- убедитесь, что бот выше управляемой клиентской роли и имеет права во всех трёх каналах/категории;
+- храните токен и пароль только в `.env` или менеджере секретов;
+- проверьте `git status --ignored`: `.env`, `codes/`, логи и сборка должны быть проигнорированы;
+- запустите один экземпляр бота, чтобы не дублировать обработчики событий.
+
+Если токен Discord когда-либо попал в чат, лог или Git, немедленно сбросьте его в Developer Portal.
