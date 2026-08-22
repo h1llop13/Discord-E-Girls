@@ -8,11 +8,7 @@ import { createPool } from "./pool.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 
-function projectRoot(): string {
-  return path.resolve(path.dirname(currentFile), "../..");
-}
-
-export async function runMigrations(pool: Pool, migrationsDirectory = path.join(projectRoot(), "migrations")): Promise<number> {
+export async function runMigrations(pool: Pool, migrationsDirectory = path.resolve("migrations")): Promise<number> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version TEXT PRIMARY KEY,

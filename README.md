@@ -67,3 +67,23 @@ npm run codes:generate -- --count 100
 ```
 
 The CSV is written with owner-only permissions below `codes/`. That directory is intentionally ignored by Git.
+
+## Discord application setup
+
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications), create an application, and open its **Bot** page.
+2. Create/reset the bot token and paste it only into `DISCORD_TOKEN` in your local `.env`.
+3. On the Bot page enable **Server Members Intent** and **Message Content Intent**.
+4. In **OAuth2 → URL Generator**, select the `bot` and `applications.commands` scopes. Grant the bot these server permissions: View Channels, Send Messages, Manage Messages, Manage Roles, Manage Channels, Connect, Speak, and Move Members.
+5. Open the generated URL and invite the bot to the intended server. Place its bot role above `🛒 Клиент` so it can grant and remove that role.
+6. Enable Developer Mode in Discord (**User Settings → Advanced**). Right-click the server, channels, category, and roles to copy their IDs into `.env`.
+
+The bot registers `/bot-status` only in `DISCORD_GUILD_ID`. It ignores messages and interactions from every other server. The command is accepted only from a member with `CURATOR_ROLE_ID` (`👑 Куратор`).
+
+Run the bot after the database migration:
+
+```bash
+npm run build
+npm start
+```
+
+Successful startup prints the bot account and configured server to the console. Never paste the token into chat, source code, logs, or Git.

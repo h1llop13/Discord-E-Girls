@@ -1,10 +1,22 @@
 import { loadConfig } from "./config.js";
+import { runMigrations } from "./db/migrate.js";
+import { createPool } from "./db/pool.js";
+import { DiscordBot } from "./discord/bot.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const pool = createPool(config.DATABASE_URL);
+  const bot = new DiscordBot({ config, pool });
 
-  console.log(`Configuration loaded for Discord server ${config.DISCORD_GUILD_ID}.`);
-  console.log("Discord startup will be enabled in the Discord integration stage.");
+  await runMigrations(pool);
+  await bot.start();
+
+  const shutdown = async (): Promise<void> => {
+    bot.destroy();
+    await pool.end();
+  };
+  process.once("SIGINT", () => void shutdown());
+  process.once("SIGTERM", () => void shutdown());
 }
 
 main().catch((error: unknown) => {
