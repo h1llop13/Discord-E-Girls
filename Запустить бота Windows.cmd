@@ -6,8 +6,10 @@ title Discord E-Girls Bot
 rem A file opened from Explorer can have an unrelated working directory.
 cd /d "%~dp0"
 
-rem Add the standard Node.js and Docker Desktop CLI locations.
-set "PATH=%ProgramFiles%\nodejs;%ProgramFiles%\Docker\Docker\resources\bin;%PATH%"
+rem Add the standard Node.js and Docker Desktop CLI locations. Current Docker
+rem versions recommend a per-user installation, while older installations use
+rem Program Files.
+set "PATH=%ProgramFiles%\nodejs;%LocalAppData%\Programs\DockerDesktop\resources\bin;%ProgramFiles%\Docker\Docker\resources\bin;%PATH%"
 
 echo.
 echo Discord E-Girls Bot - локальный запуск Windows
@@ -71,7 +73,9 @@ if not errorlevel 1 goto docker_ready
 
 echo.
 echo [^>] Docker Desktop не запущен. Открываю его и жду готовности...
-if exist "%ProgramFiles%\Docker\Docker\Docker Desktop.exe" (
+if exist "%LocalAppData%\Programs\DockerDesktop\Docker Desktop.exe" (
+  start "" "%LocalAppData%\Programs\DockerDesktop\Docker Desktop.exe"
+) else if exist "%ProgramFiles%\Docker\Docker\Docker Desktop.exe" (
   start "" "%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
 ) else if exist "%LocalAppData%\Docker\Docker Desktop.exe" (
   start "" "%LocalAppData%\Docker\Docker Desktop.exe"
@@ -98,7 +102,7 @@ echo.
 echo [^>] Запуск PostgreSQL в Docker
 docker compose up -d
 if errorlevel 1 (
-  set "ERROR_MESSAGE=Не удалось запустиь PostgreSQL в Docker."
+  set "ERROR_MESSAGE=Не удалось запустить PostgreSQL в Docker."
   goto fail
 )
 
