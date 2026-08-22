@@ -19,16 +19,15 @@ Discord-бот на TypeScript для активации одноразовых 
 
 - macOS;
 - Node.js 22 или новее;
-- PostgreSQL 16 или новее;
+- Docker Desktop либо PostgreSQL 16 или новее;
 - Discord-сервер, на котором вы можете управлять ботами, ролями и каналами.
 
 ## 1. Установка
 
-Установите Node.js и PostgreSQL через Homebrew:
+Установите Node.js через Homebrew:
 
 ```bash
-brew install node postgresql@16
-brew services start postgresql@16
+brew install node
 npm install
 ```
 
@@ -41,6 +40,33 @@ cp .env.example .env
 `.env` содержит секреты и уже исключён из Git. Не отправляйте его другим людям.
 
 ## 2. PostgreSQL
+
+### Вариант A: Docker Desktop
+
+Рекомендуемый вариант для локальной проверки не конфликтует с PostgreSQL на Mac:
+
+```bash
+docker compose up -d
+docker compose exec postgres createdb -U discord_bot discord_bot_test
+```
+
+Контейнер доступен только локально на порту `5433`. Для него в `.env` укажите:
+
+```dotenv
+DATABASE_URL=postgresql://discord_bot@127.0.0.1:5433/discord_bot
+TEST_DATABASE_URL=postgresql://discord_bot@127.0.0.1:5433/discord_bot_test
+```
+
+Режим `trust` в `compose.yaml` предназначен исключительно для локальной тестовой машины. Остановить контейнер можно командой `docker compose stop`; `docker compose down` также удалит контейнер, но сохранит данные в именованном томе.
+
+### Вариант B: PostgreSQL через Homebrew
+
+Установите и запустите сервер:
+
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+```
 
 Создайте пользователя и пустую базу. Первая команда безопасно запросит пароль, не показывая его в истории терминала:
 
