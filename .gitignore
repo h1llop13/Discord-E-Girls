@@ -1,0 +1,28 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+
+# Runtime files
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# Generated purchase-code exports
+codes/
+exports/
+*codes*.csv
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
