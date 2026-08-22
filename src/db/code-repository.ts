@@ -51,4 +51,11 @@ export class CodeRepository {
     );
     return Number(result.rows[0]?.count ?? 0);
   }
+
+  public async unusedCodes(): Promise<string[]> {
+    const result = await this.pool.query<{ code: string }>(
+      "SELECT code FROM purchase_codes WHERE used_at IS NULL ORDER BY created_at, id",
+    );
+    return result.rows.map((row) => row.code);
+  }
 }

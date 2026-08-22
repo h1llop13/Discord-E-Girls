@@ -1,5 +1,6 @@
 import {
   ChannelType,
+  AttachmentBuilder,
   Client,
   Events,
   GatewayIntentBits,
@@ -13,7 +14,10 @@ import {
 } from "discord.js";
 import type { Pool } from "pg";
 import type { AppConfig } from "../config.js";
+import { CodeBatchService } from "../codes/code-batch-service.js";
+import { codesToCsv } from "../codes/csv.js";
 import { ActivationGuardRepository } from "../db/activation-guard-repository.js";
+import { CodeRepository } from "../db/code-repository.js";
 import { OrderRepository, type OrderRecord } from "../db/order-repository.js";
 import { TimerRepository } from "../db/timer-repository.js";
 import { ActivationService } from "../services/activation-service.js";
@@ -46,10 +50,14 @@ export class DiscordBot {
   private readonly guards: ActivationGuardRepository;
   private readonly activations: ActivationService;
   private readonly timerManager: DiscordTimerManager;
+  private readonly codeRepository: CodeRepository;
+  private readonly codeBatches: CodeBatchService;
 
   public constructor(private readonly dependencies: BotDependencies) {
     this.orders = new OrderRepository(dependencies.pool);
     this.guards = new ActivationGuardRepository(dependencies.pool);
+    this.codeRepository = new CodeRepository(dependencies.pool);
+    this.codeBatches = new CodeBatchService(this.codeRepository);
     this.activations = new ActivationService(this.orders, this.guards);
     this.client = new Client({
       intents: [
@@ -151,6 +159,38 @@ export class DiscordBot {
 
     if (interaction.commandName === "bot-status") {
       await interaction.reply({ content: "✅ Бот подключён, база доступна, конфигурация сервера загружена.", ephemeral: true });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    if (interaction.commandName === "codes") {
+      const subcommand = interaction.options.getSubcommand();
+      const codes = subcommand === "generate"
+        ? await this.codeBatches.generate(interaction.options.getInteger("quantity", true))
+        : await this.codeRepository.unusedCodes();
+      const attachment = new AttachmentBuilder(Buffer.from(codesToCsv(codes), "utf8"), {
+        name: subcommand === "generate" ? `new-codes-${Date.now()}.csv` : `unused-codes-${Date.now()}.csv`,
+      });
+      const action = subcommand === "generate" ? "создано" : "свободно";
+      await interaction.editReply({ content: `Кодов ${action}: ${codes.length}. Файл виден только вам.`, files: [attachment] });
+      return;
+    }
+
+    if (interaction.commandName === "order") {
+      const subcommand = interaction.options.getSubcommand();
+      const orderId = interaction.options.getInteger("number", true);
+      if (subcommand === "extend") {
+        const minutes = interaction.options.getInteger("minutes", true);
+        const timer = await this.timerManager.extendOrder(guild, orderId, minutes);
+        await interaction.editReply(
+          timer?.closesAt
+            ? `Заказ #${orderId} продлён. Новое закрытие: ${timer.closesAt.toLocaleString("ru-RU")}.`
+            : `Активный запущенный заказ #${orderId} не найден.`,
+        );
+      } else {
+        const closed = await this.timerManager.closeOrder(guild, orderId);
+        await interaction.editReply(closed ? `Заказ #${orderId} закрыт.` : `Активный заказ #${orderId} не найден.`);
+      }
     }
   }
 

@@ -81,6 +81,33 @@ export class DiscordTimerManager {
     await this.cleanupFinalized(guild);
   }
 
+  public async extendOrder(guild: Guild, orderId: number, minutes: number): Promise<OrderTimerRecord | null> {
+    const order = await this.orders.findById(orderId);
+    if (!order || order.guildId !== guild.id || order.status !== "active") return null;
+    const extended = await this.timers.extend(orderId, minutes);
+    if (!extended) return null;
+    if (extended.wasLocked) {
+      const channel = await guild.channels.fetch(extended.timer.voiceChannelId).catch(() => null);
+      if (channel?.type === ChannelType.GuildVoice) {
+        await Promise.all([
+          channel.permissionOverwrites.edit(extended.timer.buyerDiscordId, { Connect: true }),
+          channel.permissionOverwrites.edit(this.config.EGIRL_ROLE_ID, { Connect: true }),
+        ]);
+      }
+    }
+    await this.log(guild, `➕ Заказ #${orderId} продлён на ${minutes} мин.`);
+    return extended.timer;
+  }
+
+  public async closeOrder(guild: Guild, orderId: number): Promise<boolean> {
+    const order = await this.orders.findById(orderId);
+    if (!order || order.guildId !== guild.id || order.status !== "active") return false;
+    await this.orders.finalize(orderId, "closed");
+    await this.cleanupFinalized(guild);
+    await this.log(guild, `🛑 Заказ #${orderId} досрочно закрыт куратором.`);
+    return true;
+  }
+
   private async evaluatePresence(order: OrderRecord, members: ReadonlyMap<string, import("discord.js").GuildMember>): Promise<void> {
     const people = [...members.values()].filter((member) => !member.user.bot);
     const girls = people.filter((member) => member.roles.cache.has(this.config.EGIRL_ROLE_ID));

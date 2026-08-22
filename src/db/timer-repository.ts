@@ -9,6 +9,11 @@ export interface OrderTimerRecord extends TimerState {
   voiceChannelId: string;
 }
 
+export interface ExtendedTimer {
+  timer: OrderTimerRecord;
+  wasLocked: boolean;
+}
+
 interface TimerRow {
   order_id: string;
   guild_id: string;
@@ -120,5 +125,27 @@ export class TimerRepository {
       "UPDATE order_timers SET entry_locked_at = COALESCE(entry_locked_at, $2) WHERE order_id = $1",
       [orderId, at],
     );
+  }
+
+  public async extend(orderId: number, minutes: number): Promise<ExtendedTimer | null> {
+    if (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 1440) {
+      throw new RangeError("Extension must be an integer from 1 to 1440 minutes.");
+    }
+    const before = await this.findByOrderId(orderId);
+    if (!before?.startedAt || !before.closesAt || !before.deletesAt) return null;
+
+    const updated = await this.pool.query(
+      `UPDATE order_timers SET
+         warning_at = warning_at + ($2 * INTERVAL '1 minute'),
+         closes_at = closes_at + ($2 * INTERVAL '1 minute'),
+         deletes_at = deletes_at + ($2 * INTERVAL '1 minute'),
+         entry_locked_at = NULL
+       WHERE order_id = $1
+         AND EXISTS (SELECT 1 FROM orders WHERE id = $1 AND status = 'active')`,
+      [orderId, minutes],
+    );
+    if (updated.rowCount !== 1) return null;
+    const timer = await this.findByOrderId(orderId);
+    return timer ? { timer, wasLocked: before.entryLockedAt !== null } : null;
   }
 }
