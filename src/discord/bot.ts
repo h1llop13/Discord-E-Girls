@@ -12,9 +12,9 @@ import {
 } from "discord.js";
 import type { Pool } from "pg";
 import type { AppConfig } from "../config.js";
-import { CODE_PATTERN, normalizeCode } from "../codes/generator.js";
 import { ActivationGuardRepository } from "../db/activation-guard-repository.js";
 import { OrderRepository, type OrderRecord } from "../db/order-repository.js";
+import { ActivationService } from "../services/activation-service.js";
 import { commandDefinitions } from "./commands.js";
 import { privateVoiceOverwrites } from "./permissions.js";
 
@@ -46,10 +46,12 @@ export class DiscordBot {
   private readonly client: Client;
   private readonly orders: OrderRepository;
   private readonly guards: ActivationGuardRepository;
+  private readonly activations: ActivationService;
 
   public constructor(private readonly dependencies: BotDependencies) {
     this.orders = new OrderRepository(dependencies.pool);
     this.guards = new ActivationGuardRepository(dependencies.pool);
+    this.activations = new ActivationService(this.orders, this.guards);
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -143,26 +145,23 @@ export class DiscordBot {
     }
 
     await message.delete().catch(() => undefined);
-    const code = normalizeCode(message.content);
-    const currentGuard = await this.guards.get(config.DISCORD_GUILD_ID, message.author.id);
-    if (currentGuard.blockedUntil && currentGuard.blockedUntil.getTime() > Date.now()) {
-      await sendPrivateOrTemporary(message, `Слишком много неверных попыток. Блокировка действует до ${currentGuard.blockedUntil.toLocaleString("ru-RU")}.`);
+    const activation = await this.activations.activate(message.content, config.DISCORD_GUILD_ID, message.author.id);
+    if (activation.kind === "blocked") {
+      await sendPrivateOrTemporary(message, `Слишком много неверных попыток. Блокировка действует до ${activation.blockedUntil.toLocaleString("ru-RU")}.`);
       return;
     }
-
-    if (!CODE_PATTERN.test(code)) {
-      await this.rejectCode(message, "Код должен иметь формат XXXX-XXXX.");
-      return;
-    }
-
-    const activation = await this.orders.activateCode(code, config.DISCORD_GUILD_ID, message.author.id);
     if (activation.kind !== "activated") {
-      const reason = activation.kind === "used" ? "Этот код уже использован." : "Такого кода нет.";
-      await this.rejectCode(message, reason);
+      const reason = activation.kind === "used"
+        ? "Этот код уже использован."
+        : activation.kind === "missing"
+          ? "Такого кода нет."
+          : "Код должен иметь формат XXXX-XXXX.";
+      const suffix = activation.guard.blockedUntil
+        ? ` После пяти ошибок вы заблокированы до ${activation.guard.blockedUntil.toLocaleString("ru-RU")}.`
+        : ` Осталось попыток до блокировки: ${Math.max(0, 5 - activation.guard.failedAttempts)}.`;
+      await sendPrivateOrTemporary(message, `${reason}${suffix}`);
       return;
     }
-
-    await this.guards.clear(config.DISCORD_GUILD_ID, message.author.id);
     const guild = message.guild;
     if (!guild) return;
     const member = await guild.members.fetch(message.author.id);
@@ -173,15 +172,6 @@ export class DiscordBot {
       await sendLog(logChannel, `✅ Заказ #${activation.order.id}: <@${message.author.id}>, приватная комната <#${channelId}> создана.`);
     }
     await sendPrivateOrTemporary(message, `Код принят. Заказ #${activation.order.id} создан, ваша комната: <#${channelId}>.`);
-  }
-
-  private async rejectCode(message: Message, reason: string): Promise<void> {
-    const { config } = this.dependencies;
-    const guard = await this.guards.recordFailure(config.DISCORD_GUILD_ID, message.author.id);
-    const suffix = guard.blockedUntil
-      ? ` После пяти ошибок вы заблокированы до ${guard.blockedUntil.toLocaleString("ru-RU")}.`
-      : ` Осталось попыток до блокировки: ${Math.max(0, 5 - guard.failedAttempts)}.`;
-    await sendPrivateOrTemporary(message, `${reason}${suffix}`);
   }
 
   private async ensureVoiceRoom(guild: Guild, order: OrderRecord): Promise<string> {
