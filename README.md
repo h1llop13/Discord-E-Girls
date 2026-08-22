@@ -41,3 +41,29 @@ npm start         # run the compiled app
 ```
 
 Startup stops with a list of missing or invalid environment variables when configuration is incomplete.
+
+## PostgreSQL and the first codes
+
+Install and start PostgreSQL, then create a local role and an empty database:
+
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+createuser --pwprompt discord_bot
+createdb --owner=discord_bot discord_bot
+```
+
+Set the matching password in the local `.env` only:
+
+```dotenv
+DATABASE_URL=postgresql://discord_bot:YOUR_PASSWORD@localhost:5432/discord_bot
+```
+
+Create/update the schema and generate the first private CSV containing 100 codes:
+
+```bash
+npm run db:migrate
+npm run codes:generate -- --count 100
+```
+
+The CSV is written with owner-only permissions below `codes/`. That directory is intentionally ignored by Git.

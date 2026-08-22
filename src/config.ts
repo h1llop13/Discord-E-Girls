@@ -19,6 +19,10 @@ export const envSchema = z.object({
 
 export type AppConfig = z.infer<typeof envSchema>;
 
+const databaseSchema = z.object({
+  DATABASE_URL: z.string().url().startsWith("postgresql://"),
+});
+
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
   const result = envSchema.safeParse(environment);
 
@@ -31,4 +35,14 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   }
 
   return result.data;
+}
+
+export function loadDatabaseUrl(environment: NodeJS.ProcessEnv = process.env): string {
+  const result = databaseSchema.safeParse(environment);
+
+  if (!result.success) {
+    throw new Error("DATABASE_URL is missing or invalid. Expected postgresql://user:password@host:port/database");
+  }
+
+  return result.data.DATABASE_URL;
 }

@@ -17,8 +17,8 @@ logs/
 *.db
 
 # Generated purchase-code exports
-codes/
-exports/
+/codes/
+/exports/
 *codes*.csv
 
 # Editor and OS files

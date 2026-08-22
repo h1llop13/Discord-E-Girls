@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "codes:generate": "tsx src/codes/generate-cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
