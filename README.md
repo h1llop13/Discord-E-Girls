@@ -87,3 +87,9 @@ npm start
 ```
 
 Successful startup prints the bot account and configured server to the console. Never paste the token into chat, source code, logs, or Git.
+
+## Timer modes
+
+`TEST_MODE=false` uses the production schedule: 60 minutes waiting for a conversation to start, a 60-minute active order, a warning 10 minutes before closing, and room deletion 5 minutes after entry is locked.
+
+For manual testing set `TEST_MODE=true`: waiting and active order time are 2 minutes, the warning is sent 1 minute before closing, and deletion happens 1 minute after closing. Timers and joined E-Girl participants are stored in PostgreSQL and continue after a bot restart.

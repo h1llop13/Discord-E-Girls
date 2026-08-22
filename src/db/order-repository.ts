@@ -123,4 +123,41 @@ export class OrderRepository {
     );
     return result.rows[0] ? mapOrder(result.rows[0]) : null;
   }
+
+  public async findByVoiceChannel(channelId: string): Promise<OrderRecord | null> {
+    const result = await this.pool.query<OrderRow>(
+      `SELECT ${orderColumns} FROM orders WHERE voice_channel_id = $1 AND status = 'active'`,
+      [channelId],
+    );
+    return result.rows[0] ? mapOrder(result.rows[0]) : null;
+  }
+
+  public async finalize(orderId: number, status: "not_started" | "completed" | "closed"): Promise<void> {
+    await this.pool.query(
+      `UPDATE orders SET status = $2, closed_at = COALESCE(closed_at, NOW())
+       WHERE id = $1 AND status = 'active'`,
+      [orderId, status],
+    );
+  }
+
+  public async pendingCleanup(guildId: string): Promise<OrderRecord[]> {
+    const result = await this.pool.query<OrderRow>(
+      `SELECT ${orderColumns} FROM orders
+       WHERE guild_id = $1 AND status <> 'active' AND voice_channel_id IS NOT NULL`,
+      [guildId],
+    );
+    return result.rows.map(mapOrder);
+  }
+
+  public async clearVoiceChannel(orderId: number): Promise<void> {
+    await this.pool.query("UPDATE orders SET voice_channel_id = NULL WHERE id = $1", [orderId]);
+  }
+
+  public async buyerHasActiveOrders(guildId: string, buyerDiscordId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "SELECT 1 FROM orders WHERE guild_id = $1 AND buyer_discord_id = $2 AND status = 'active' LIMIT 1",
+      [guildId, buyerDiscordId],
+    );
+    return result.rowCount === 1;
+  }
 }

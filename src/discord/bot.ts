@@ -9,14 +9,17 @@ import {
   type Guild,
   type Message,
   type TextBasedChannel,
+  type VoiceState,
 } from "discord.js";
 import type { Pool } from "pg";
 import type { AppConfig } from "../config.js";
 import { ActivationGuardRepository } from "../db/activation-guard-repository.js";
 import { OrderRepository, type OrderRecord } from "../db/order-repository.js";
+import { TimerRepository } from "../db/timer-repository.js";
 import { ActivationService } from "../services/activation-service.js";
 import { commandDefinitions } from "./commands.js";
 import { privateVoiceOverwrites, privateVoiceRoomName } from "./permissions.js";
+import { DiscordTimerManager } from "./timer-manager.js";
 
 interface BotDependencies {
   config: AppConfig;
@@ -42,6 +45,7 @@ export class DiscordBot {
   private readonly orders: OrderRepository;
   private readonly guards: ActivationGuardRepository;
   private readonly activations: ActivationService;
+  private readonly timerManager: DiscordTimerManager;
 
   public constructor(private readonly dependencies: BotDependencies) {
     this.orders = new OrderRepository(dependencies.pool);
@@ -56,6 +60,12 @@ export class DiscordBot {
         GatewayIntentBits.MessageContent,
       ],
     });
+    this.timerManager = new DiscordTimerManager(
+      this.client,
+      dependencies.config,
+      this.orders,
+      new TimerRepository(dependencies.pool),
+    );
     this.bindEvents();
   }
 
@@ -69,6 +79,7 @@ export class DiscordBot {
   }
 
   public destroy(): void {
+    this.timerManager.stop();
     this.client.destroy();
   }
 
@@ -80,19 +91,29 @@ export class DiscordBot {
     this.client.on(Events.MessageCreate, (message) => {
       void this.onMessage(message).catch((error: unknown) => console.error("Message handling failed:", error));
     });
+    this.client.on(Events.VoiceStateUpdate, (_oldState, newState) => {
+      void this.onVoiceState(newState).catch((error: unknown) => console.error("Voice state handling failed:", error));
+    });
   }
 
   private async onReady(client: Client<true>): Promise<void> {
     try {
       const guild = await client.guilds.fetch(this.dependencies.config.DISCORD_GUILD_ID);
       await this.validateConfiguredGuild(guild);
+      await this.timerManager.processDue(guild);
       await this.repairActiveOrders(guild);
+      await this.timerManager.recoverPresence(guild);
+      this.timerManager.start(guild);
       console.log(`Discord bot ${client.user.tag} connected to ${guild.name} (${guild.id}).`);
     } catch (error) {
       console.error("Discord startup validation failed:", error);
       this.destroy();
       process.exitCode = 1;
     }
+  }
+
+  private async onVoiceState(state: VoiceState): Promise<void> {
+    await this.timerManager.handleVoiceState(state);
   }
 
   private async validateConfiguredGuild(guild: Guild): Promise<void> {
@@ -172,7 +193,10 @@ export class DiscordBot {
   private async ensureVoiceRoom(guild: Guild, order: OrderRecord): Promise<string> {
     if (order.voiceChannelId) {
       const existing = await guild.channels.fetch(order.voiceChannelId).catch(() => null);
-      if (existing) return existing.id;
+      if (existing) {
+        await this.timerManager.ensureWaiting(order.id);
+        return existing.id;
+      }
     }
 
     const { config } = this.dependencies;
@@ -197,6 +221,7 @@ export class DiscordBot {
     if (storedChannelId !== created.id) {
       await created.delete("Duplicate room prevented").catch(() => undefined);
     }
+    await this.timerManager.ensureWaiting(order.id);
     return storedChannelId;
   }
 
