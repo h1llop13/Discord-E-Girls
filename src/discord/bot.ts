@@ -4,6 +4,7 @@ import {
   Client,
   Events,
   GatewayIntentBits,
+  MessageFlags,
   type Interaction,
   REST,
   Routes,
@@ -153,17 +154,17 @@ export class DiscordBot {
     if (!guild) return;
     const member = await guild.members.fetch(interaction.user.id);
     if (!member.roles.cache.has(config.CURATOR_ROLE_ID)) {
-      await interaction.reply({ content: "Эта команда доступна только роли 👑 Куратор.", ephemeral: true });
+      await interaction.reply({ content: "Эта команда доступна только роли 👑 Куратор.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     if (interaction.commandName === "bot-status") {
       await this.dependencies.pool.query("SELECT 1");
-      await interaction.reply({ content: "✅ Бот подключён, база доступна, конфигурация сервера загружена.", ephemeral: true });
+      await interaction.reply({ content: "✅ Бот подключён, база доступна, конфигурация сервера загружена.", flags: MessageFlags.Ephemeral });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     if (interaction.commandName === "codes") {
       const subcommand = interaction.options.getSubcommand();
       const codes = subcommand === "generate"
@@ -201,7 +202,7 @@ export class DiscordBot {
     const content = "Не удалось выполнить команду. Проверьте журнал бота или повторите позже.";
     try {
       if (interaction.deferred || interaction.replied) await interaction.editReply({ content, files: [] });
-      else await interaction.reply({ content, ephemeral: true });
+      else await interaction.reply({ content, flags: MessageFlags.Ephemeral });
     } catch (replyError) {
       console.error("Could not report interaction error:", replyError);
     }
